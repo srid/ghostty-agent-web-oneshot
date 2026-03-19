@@ -1,21 +1,5 @@
 {
-  "name": "ghostty-agent-web-client",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
   "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "ghostty-web": "^0.3.0"
-  },
-  "devDependencies": {
-    "vite": "^6.3.5",
-    "@vitejs/plugin-react": "^4.5.2",
-    "@types/react": "^19.1.4",
-    "@types/react-dom": "^19.1.5"
+    "ghostty-web": "^0.4.0"
   }
 }

@@ -1,0 +1,9 @@
+[serve]
+port = 5173
+
+[[proxy]]
+backend = "http://localhost:7681/api/"
+
+[[proxy]]
+backend = "http://localhost:7681/ws/"
+ws = true
