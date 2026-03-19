@@ -74,8 +74,8 @@
               cp ${ghosttyWeb}/ghostty-vt.wasm dist/ 2>/dev/null || \
                 cp ${ghosttyWeb}/dist/ghostty-vt.wasm dist/ 2>/dev/null || true
 
-              # Copy our JS bridge (rewrite import to use local file)
-              sed "s|from 'ghostty-web'|from \"./ghostty-web.js\"|g" js/ghostty-bridge.js > dist/ghostty-bridge.js
+              # Copy our JS bridge
+              cp js/ghostty-bridge.js dist/
 
               # Copy static assets
               cp style.css dist/

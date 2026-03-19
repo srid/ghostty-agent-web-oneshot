@@ -1,4 +1,4 @@
-import { init, Terminal } from 'ghostty-web';
+import { init, Terminal } from '/ghostty-web.js';
 
 let initialized = false;
 
