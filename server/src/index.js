@@ -84,9 +84,9 @@ app.use(express.json());
 const clientDist = process.env.GHOSTTY_AGENT_WEB_CLIENT_DIST || path.resolve(__dirname, '../../client/dist');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
-  // SPA fallback — serve index.html for non-API, non-WS routes
+  // SPA fallback — serve index.html for non-API, non-WS, non-asset routes
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path.startsWith('/ws/')) return next();
+    if (req.path.startsWith('/api/') || req.path.startsWith('/ws/') || req.path.includes('.')) return next();
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 }
