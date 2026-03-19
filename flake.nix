@@ -1,57 +1,67 @@
 {
+  description = "ghostty-agent-web — web terminal dashboard for coding agent sessions";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    rust-flake.url = "github:juspay/rust-flake";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
+  outputs = inputs:
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 
-        client = pkgs.buildNpmPackage {
+      imports = [
+        inputs.rust-flake.flakeModules.default
+        inputs.rust-flake.flakeModules.nixpkgs
+      ];
+
+      perSystem = { self', pkgs, lib, ... }: {
+        rust-project = {
+          crateNixFile = "crate.nix";
+        };
+
+        # Build the client WASM bundle with trunk
+        packages.client = pkgs.stdenv.mkDerivation {
           pname = "ghostty-agent-web-client";
           version = "0.1.0";
-          src = ./client;
-          npmDepsHash = "sha256-CWPB0PeLtL+oCmXzD/iGsDH+aFeTmIPItYXPTAX2BpU=";
-          NODE_OPTIONS = "--max-old-space-size=4096";
+          src = ./.;
+          nativeBuildInputs = with pkgs; [
+            trunk
+            wasm-bindgen-cli
+            nodejs # needed for ghostty-web npm package
+          ] ++ lib.optionals pkgs.stdenv.isDarwin [
+            pkgs.darwin.apple_sdk.frameworks.CoreServices
+          ];
+          buildPhase = ''
+            cd client
+            trunk build --release
+          '';
           installPhase = ''
-            runHook preInstall
             mkdir -p $out
             cp -r dist/* $out/
-            runHook postInstall
           '';
         };
 
-        server = pkgs.buildNpmPackage {
-          pname = "ghostty-agent-web-server";
-          version = "0.1.0";
-          src = ./server;
-          npmDepsHash = "sha256-8FeKDfAq/lqt+KS7LXySmpQ8B+x9pOzrd+qCv6V1KgI=";
-          makeCacheWritable = true;
-          nativeBuildInputs = with pkgs; [ python3 ];
-          dontNpmBuild = true;
-          postInstall = ''
-            # Fix node-pty spawn-helper permissions
-            find $out -name spawn-helper -exec chmod +x {} \;
-            # Link client dist into server
-            ln -s ${client} $out/lib/node_modules/ghostty-agent-web-server/client-dist
-          '';
-        };
-      in
-      {
+        # Combined package: server binary + client dist
         packages.default = pkgs.writeShellApplication {
           name = "ghostty-agent-web";
-          runtimeInputs = [ pkgs.nodejs ];
+          runtimeInputs = [ ];
           text = ''
-            export GHOSTTY_AGENT_WEB_CLIENT_DIST="${client}"
-            exec ${pkgs.nodejs}/bin/node ${server}/lib/node_modules/ghostty-agent-web-server/src/index.js "$@"
+            export GHOSTTY_AGENT_WEB_CLIENT_DIST="${self'.packages.client}"
+            exec ${self'.packages.ghostty-agent-web-server}/bin/ghostty-agent-web-server "$@"
           '';
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [ nodejs python3 just ];
+          inputsFrom = [ self'.devShells.rust ];
+          packages = with pkgs; [
+            trunk
+            wasm-bindgen-cli
+            just
+            nodejs # for ghostty-web npm package in trunk build
+          ];
         };
-      }
-    );
+      };
+    };
 }

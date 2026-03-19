@@ -3,28 +3,25 @@
 default:
     @just --list
 
-# Install deps for both client and server
-install:
-    cd server && npm install && chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper
-    cd client && npm install
-
-# Run server with auto-restart on changes
+# Run server with auto-restart
 server:
-    cd server && node --watch src/index.js
+    cargo watch -w server -w common -x 'run -p ghostty-agent-web-server'
 
-# Run client dev server (Vite HMR, proxies API/WS to :7681)
+# Run client dev server (trunk serves WASM + proxies API to :7681)
 client:
-    cd client && npx vite --port 5173 --open
+    cd client && trunk serve --port 5173 --proxy-backend=http://localhost:7681/api/ --proxy-backend=http://localhost:7681/ws/
 
 # Run both server and client in parallel (Ctrl+C kills both)
 dev:
-    trap 'kill 0' EXIT; cd server && node --watch src/index.js & cd client && npx vite --port 5173 --open & wait
+    trap 'kill 0' EXIT; just server & just client & wait
 
 # Build client for production
-build:
-    cd client && npx vite build
+build-client:
+    cd client && trunk build --release
 
-# Run production build (server serves client dist)
-prod:
-    just build
-    cd server && node src/index.js
+# Build server for production
+build-server:
+    cargo build -p ghostty-agent-web-server --release
+
+# Build everything
+build: build-client build-server
