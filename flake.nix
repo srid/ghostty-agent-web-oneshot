@@ -40,7 +40,7 @@
             '';
           };
 
-          # Build the client WASM binary with crane
+          # Build the client WASM binary with crane + run wasm-bindgen in same sandbox
           clientWasm = craneLib.buildPackage {
             pname = "ghostty-agent-web-client";
             version = "0.1.0";
@@ -48,6 +48,17 @@
             cargoExtraArgs = "-p ghostty-agent-web-client --target wasm32-unknown-unknown";
             doCheck = false;
             CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+            nativeBuildInputs = [ pkgs.wasm-bindgen-cli pkgs.binaryen ];
+            # Run wasm-bindgen in the install phase while source is still available
+            installPhaseCommand = ''
+              mkdir -p $out/dist
+              wasm-bindgen \
+                target/wasm32-unknown-unknown/release/ghostty-agent-web-client.wasm \
+                --out-dir $out/dist \
+                --target web \
+                --no-typescript
+              wasm-opt -Os $out/dist/ghostty-agent-web-client_bg.wasm -o $out/dist/ghostty-agent-web-client_bg.wasm || true
+            '';
           };
 
           # Assemble client dist: wasm-bindgen output + ghostty-web + HTML/CSS/JS
@@ -55,53 +66,43 @@
             pname = "ghostty-agent-web-client-dist";
             version = "0.1.0";
             src = ./client;
-            nativeBuildInputs = [ pkgs.wasm-bindgen-cli pkgs.binaryen ];
-            buildPhase = ''
-              mkdir -p dist
-
-              # Run wasm-bindgen
-              wasm-bindgen \
-                ${clientWasm}/bin/ghostty-agent-web-client.wasm \
-                --out-dir dist \
-                --target web \
-                --no-typescript
-
-              # Optimize WASM
-              wasm-opt -Os dist/ghostty-agent-web-client_bg.wasm -o dist/ghostty-agent-web-client_bg.wasm || true
-
-              # Copy ghostty-web library files
-              cp ${ghosttyWeb}/dist/ghostty-web.js dist/
-              cp ${ghosttyWeb}/ghostty-vt.wasm dist/ 2>/dev/null || \
-                cp ${ghosttyWeb}/dist/ghostty-vt.wasm dist/ 2>/dev/null || true
-
-              # Copy our JS bridge
-              cp js/ghostty-bridge.js dist/
-
-              # Copy static assets
-              cp style.css dist/
-
-              # Generate index.html that loads the WASM app
-              cat > dist/index.html <<'INDEXEOF'
-              <!DOCTYPE html>
-              <html lang="en">
-              <head>
-                <meta charset="UTF-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <title>ghostty-agent-web</title>
-                <link rel="stylesheet" href="style.css" />
-              </head>
-              <body>
-                <script type="module">
-                  import init from './ghostty-agent-web-client.js';
-                  await init();
-                </script>
-              </body>
-              </html>
-INDEXEOF
-            '';
+            phases = [ "unpackPhase" "installPhase" ];
             installPhase = ''
               mkdir -p $out
-              cp -r dist/* $out/
+
+              # Copy wasm-bindgen output
+              cp -r ${clientWasm}/dist/* $out/
+
+              # Copy ghostty-web library files
+              cp ${ghosttyWeb}/dist/ghostty-web.js $out/
+              cp ${ghosttyWeb}/dist/__vite-browser-external-2447137e.js $out/
+              cp ${ghosttyWeb}/ghostty-vt.wasm $out/ 2>/dev/null || \
+                cp ${ghosttyWeb}/dist/ghostty-vt.wasm $out/ 2>/dev/null || true
+
+              # Copy our JS bridge
+              cp js/ghostty-bridge.js $out/
+
+              # Copy static assets
+              cp style.css $out/
+
+              # Generate index.html
+              cat > $out/index.html <<'INDEXEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ghostty-agent-web</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <script type="module">
+    import init from './ghostty-agent-web-client.js';
+    await init();
+  </script>
+</body>
+</html>
+INDEXEOF
             '';
           };
         in

@@ -54,7 +54,12 @@ pub fn TerminalView(session_id: String) -> impl IntoView {
             let _ = term.init().await;
             term.open(&container);
 
-            // Fit to container and get dimensions
+            // Wait a frame for the canvas to render, then fit
+            wasm_bindgen_futures::JsFuture::from(js_sys::Promise::new(&mut |resolve, _| {
+                web_sys::window().unwrap()
+                    .request_animation_frame(&resolve).unwrap();
+            })).await.unwrap();
+
             let size = term.fit_to_container();
             let (cols, rows) = if !size.is_null() && !size.is_undefined() {
                 let cols = js_sys::Reflect::get(&size, &"cols".into())
@@ -67,9 +72,19 @@ pub fn TerminalView(session_id: String) -> impl IntoView {
             };
 
             // Connect WebSocket
-            let protocol = if web_sys::window().unwrap().location().protocol().unwrap() == "https:" { "wss:" } else { "ws:" };
-            let host = web_sys::window().unwrap().location().host().unwrap();
-            let ws_url = format!("{}//{}/ws/{}", protocol, host, session_id);
+            // In dev (trunk on :5173), connect directly to server on :7681
+            // In production, server serves everything on one port
+            let window = web_sys::window().unwrap();
+            let location = window.location();
+            let protocol = if location.protocol().unwrap() == "https:" { "wss:" } else { "ws:" };
+            let hostname = location.hostname().unwrap();
+            let port = location.port().unwrap();
+            let ws_host = if port == "5173" {
+                format!("{}:7681", hostname)
+            } else {
+                location.host().unwrap()
+            };
+            let ws_url = format!("{}//{}/ws/{}", protocol, ws_host, session_id);
             let ws = WebSocket::new(&ws_url).unwrap();
             ws.set_binary_type(BinaryType::Arraybuffer);
 

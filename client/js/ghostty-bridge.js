@@ -23,14 +23,15 @@ export class GhosttyTerminal {
     open(element) {
         this.container = element;
         this.term.open(element);
-        // Measure cell size from rendered canvas
-        requestAnimationFrame(() => {
-            const canvas = element.querySelector('canvas');
-            if (canvas) {
-                this.cellWidth = canvas.clientWidth / 80;
-                this.cellHeight = canvas.clientHeight / 24;
-            }
-        });
+    }
+
+    // Must be called after open + a frame delay to measure cell size
+    measureCells() {
+        const canvas = this.container?.querySelector('canvas');
+        if (canvas && canvas.clientWidth > 0) {
+            this.cellWidth = canvas.clientWidth / 80;
+            this.cellHeight = canvas.clientHeight / 24;
+        }
     }
 
     writeBytes(data) {
@@ -63,6 +64,7 @@ export class GhosttyTerminal {
     }
 
     fitToContainer() {
+        if (!this.cellWidth) this.measureCells();
         if (!this.container || !this.cellWidth) return null;
         const rect = this.container.getBoundingClientRect();
         const cols = Math.max(2, Math.floor(rect.width / this.cellWidth));
