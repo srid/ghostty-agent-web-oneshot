@@ -2,7 +2,8 @@
 
 A web-based terminal dashboard for managing coding agent sessions. Spawn, attach, detach, and monitor multiple terminal sessions (shell, opencode, claude-code) from a browser using [ghostty-web](https://github.com/coder/ghostty-web) for terminal rendering.
 
-![screenshot](https://github.com/user-attachments/assets/placeholder)
+<img width="1227" height="982" alt="image" src="https://github.com/user-attachments/assets/30b11937-d1b7-4291-aa51-c27f9ad408c4" />
+
 
 ## Architecture
 
