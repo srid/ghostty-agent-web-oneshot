@@ -27,15 +27,17 @@ Browser (ghostty-web)  ←WebSocket→  Node.js Server  ←PTY→  shell / openc
 - **Multi-client**: Multiple browser tabs can view the same session (spectator mode)
 - **Resize**: Terminal auto-fits to browser viewport, resize propagates to PTY
 
-## Quick Start
-
-### With Nix (production)
+## Usage
 
 ```bash
-nix run   # starts on http://localhost:7681
+nix run github:srid/ghostty-agent-web-oneshot
 ```
 
-### Development (hot reload)
+Then open http://localhost:7681 in your browser.
+
+## Development
+
+### Hot reload
 
 ```bash
 nix develop
