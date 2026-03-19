@@ -1,5 +1,8 @@
 # ghostty-agent-web
 
+> [!WARNING]
+> This is an AI-generated prototype built to explore what [ghostty-web](https://github.com/coder/ghostty-web) can provide as a browser-based terminal. Not production-ready — expect rough edges.
+
 A web-based terminal dashboard for managing coding agent sessions. Spawn, attach, detach, and monitor multiple terminal sessions (shell, opencode, claude-code) from a browser using [ghostty-web](https://github.com/coder/ghostty-web) for terminal rendering.
 
 <img width="1227" height="982" alt="image" src="https://github.com/user-attachments/assets/30b11937-d1b7-4291-aa51-c27f9ad408c4" />
