@@ -1,5 +1,4 @@
 .direnv
 node_modules/
 result
-target/
 client/dist/
