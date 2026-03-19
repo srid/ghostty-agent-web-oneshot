@@ -16,52 +16,121 @@
         inputs.rust-flake.flakeModules.nixpkgs
       ];
 
-      perSystem = { self', pkgs, lib, ... }: {
-        rust-project = {
-          crateNixFile = "crate.nix";
-        };
+      perSystem = { self', pkgs, config, lib, ... }:
+        let
+          craneLib = config.rust-project.crane-lib;
+          src = lib.cleanSource ./.;
 
-        # Build the client WASM bundle with trunk
-        packages.client = pkgs.stdenv.mkDerivation {
-          pname = "ghostty-agent-web-client";
-          version = "0.1.0";
-          src = ./.;
-          nativeBuildInputs = with pkgs; [
-            trunk
-            wasm-bindgen-cli
-            nodejs # needed for ghostty-web npm package
-          ] ++ lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.CoreServices
-          ];
-          buildPhase = ''
-            cd client
-            trunk build --release
-          '';
-          installPhase = ''
-            mkdir -p $out
-            cp -r dist/* $out/
-          '';
-        };
+          # Pre-fetch ghostty-web npm package
+          ghosttyWebTgz = pkgs.fetchurl {
+            url = "https://registry.npmjs.org/ghostty-web/-/ghostty-web-0.3.0.tgz";
+            hash = "sha256-QFp6hW9OA5Nxu2w4CbhwP3Tqu48vDBURXkYrmWFpZWA=";
+          };
 
-        # Combined package: server binary + client dist
-        packages.default = pkgs.writeShellApplication {
-          name = "ghostty-agent-web";
-          runtimeInputs = [ ];
-          text = ''
-            export GHOSTTY_AGENT_WEB_CLIENT_DIST="${self'.packages.client}"
-            exec ${self'.packages.ghostty-agent-web-server}/bin/ghostty-agent-web-server "$@"
-          '';
-        };
+          ghosttyWeb = pkgs.stdenv.mkDerivation {
+            pname = "ghostty-web";
+            version = "0.3.0";
+            src = ghosttyWebTgz;
+            phases = [ "unpackPhase" "installPhase" ];
+            unpackPhase = ''
+              tar xzf $src
+            '';
+            installPhase = ''
+              cp -r package $out
+            '';
+          };
 
-        devShells.default = pkgs.mkShell {
-          inputsFrom = [ self'.devShells.rust ];
-          packages = with pkgs; [
-            trunk
-            wasm-bindgen-cli
-            just
-            nodejs # for ghostty-web npm package in trunk build
-          ];
+          # Build the client WASM binary with crane
+          clientWasm = craneLib.buildPackage {
+            pname = "ghostty-agent-web-client";
+            version = "0.1.0";
+            inherit src;
+            cargoExtraArgs = "-p ghostty-agent-web-client --target wasm32-unknown-unknown";
+            doCheck = false;
+            CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+          };
+
+          # Assemble client dist: wasm-bindgen output + ghostty-web + HTML/CSS/JS
+          clientDist = pkgs.stdenv.mkDerivation {
+            pname = "ghostty-agent-web-client-dist";
+            version = "0.1.0";
+            src = ./client;
+            nativeBuildInputs = [ pkgs.wasm-bindgen-cli pkgs.binaryen ];
+            buildPhase = ''
+              mkdir -p dist
+
+              # Run wasm-bindgen
+              wasm-bindgen \
+                ${clientWasm}/bin/ghostty-agent-web-client.wasm \
+                --out-dir dist \
+                --target web \
+                --no-typescript
+
+              # Optimize WASM
+              wasm-opt -Os dist/ghostty-agent-web-client_bg.wasm -o dist/ghostty-agent-web-client_bg.wasm || true
+
+              # Copy ghostty-web library files
+              cp ${ghosttyWeb}/dist/ghostty-web.js dist/
+              cp ${ghosttyWeb}/ghostty-vt.wasm dist/ 2>/dev/null || \
+                cp ${ghosttyWeb}/dist/ghostty-vt.wasm dist/ 2>/dev/null || true
+
+              # Copy our JS bridge (rewrite import to use local file)
+              sed "s|from 'ghostty-web'|from \"./ghostty-web.js\"|g" js/ghostty-bridge.js > dist/ghostty-bridge.js
+
+              # Copy static assets
+              cp style.css dist/
+
+              # Generate index.html that loads the WASM app
+              cat > dist/index.html <<'INDEXEOF'
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <title>ghostty-agent-web</title>
+                <link rel="stylesheet" href="style.css" />
+              </head>
+              <body>
+                <script type="module">
+                  import init from './ghostty-agent-web-client.js';
+                  await init();
+                </script>
+              </body>
+              </html>
+INDEXEOF
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp -r dist/* $out/
+            '';
+          };
+        in
+        {
+          rust-project = {
+            crateNixFile = "crate.nix";
+          };
+
+          packages.client = clientDist;
+
+          # Combined package: server binary + client dist
+          packages.default = pkgs.writeShellApplication {
+            name = "ghostty-agent-web";
+            text = ''
+              export GHOSTTY_AGENT_WEB_CLIENT_DIST="${clientDist}"
+              exec ${self'.packages.ghostty-agent-web-server}/bin/ghostty-agent-web-server "$@"
+            '';
+          };
+
+          devShells.default = pkgs.mkShell {
+            inputsFrom = [ self'.devShells.rust ];
+            packages = with pkgs; [
+              trunk
+              wasm-bindgen-cli
+              just
+              nodejs
+              cargo-watch
+            ];
+          };
         };
-      };
     };
 }

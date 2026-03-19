@@ -2,6 +2,7 @@
 name = "ghostty-agent-web-server"
 version = "0.1.0"
 edition = "2024"
+description = "Web terminal dashboard server"
 
 [dependencies]
 ghostty-agent-web-common = { path = "../common" }

@@ -10,17 +10,18 @@ A web-based terminal dashboard for managing coding agent sessions. Spawn, attach
 
 ## How it works
 
-The server spawns real PTY processes (via `node-pty`) and holds them in memory — each session is a persistent pseudo-terminal running your shell, opencode, or any TUI program. A WebSocket bridge streams raw PTY I/O between the server and the browser. On the browser side, [ghostty-web](https://github.com/coder/ghostty-web) — Ghostty's Zig-based terminal parser compiled to WebAssembly — renders the terminal output onto a canvas with full color, cursor movement, and alternate screen buffer support. Because the PTYs live on the server, sessions survive browser disconnects: close the tab, reopen it, and you're back where you left off with scrollback replayed. This replaces the need for tmux/zellij entirely — the server *is* the multiplexer, and the browser *is* the terminal.
+The server spawns real PTY processes (via `portable-pty`) and holds them in memory — each session is a persistent pseudo-terminal running your shell, opencode, or any TUI program. A WebSocket bridge streams raw PTY I/O between the server and the browser. On the browser side, [ghostty-web](https://github.com/coder/ghostty-web) — Ghostty's Zig-based terminal parser compiled to WebAssembly — renders the terminal output onto a canvas with full color, cursor movement, and alternate screen buffer support. Because the PTYs live on the server, sessions survive browser disconnects: close the tab, reopen it, and you're back where you left off with scrollback replayed. This replaces the need for tmux/zellij entirely — the server *is* the multiplexer, and the browser *is* the terminal.
 
 ## Architecture
 
 ```
-Browser (ghostty-web)  ←WebSocket→  Node.js Server  ←PTY→  shell / opencode / claude
+Browser (Leptos + ghostty-web WASM)  ←WebSocket→  Rust Server (axum)  ←PTY→  shell / opencode / claude
 ```
 
-- **Frontend**: React + Vite SPA. Terminal rendering via `ghostty-web` — Ghostty's Zig-based VT100 parser compiled to WebAssembly (~400KB). Provides native-quality terminal emulation in the browser (colors, alternate screen buffer, cursor movement, etc).
-- **Backend**: Express server managing PTY sessions via `node-pty`. Each session gets its own pseudo-terminal. WebSocket bridge forwards raw PTY I/O to connected browser clients. Scrollback buffer (100KB) enables reattach without losing context.
-- **Nix**: Single `flake.nix` builds everything — client static assets via `buildNpmPackage` + Vite, server with native `node-pty` addon. `nix run` starts the production server.
+- **Frontend**: Leptos CSR compiled to WASM. Terminal rendering via `ghostty-web` through a thin JS bridge. Tokyo Night dark theme.
+- **Backend**: Rust server using axum for HTTP/WebSocket + `portable-pty` for PTY management. Scrollback buffer (100KB) enables reattach without losing context.
+- **Common**: Shared Rust crate with types for session metadata, API requests, and WebSocket protocol messages.
+- **Nix**: `flake.nix` using `flake-parts` + `rust-flake` (crane). Client WASM built with crane + wasm-bindgen. `nix run` starts the production server.
 
 ## Features
 
@@ -34,32 +35,29 @@ Browser (ghostty-web)  ←WebSocket→  Node.js Server  ←PTY→  shell / openc
 ## Usage
 
 ```bash
-nix run github:srid/ghostty-agent-web-oneshot
+nix run github:srid/ghostty-agent-web-oneshot/rust
 ```
 
 Then open http://localhost:7681 in your browser.
 
 ## Development
 
-### Hot reload
-
 ```bash
 nix develop
-just install   # npm install for both client and server
-just dev       # runs server (node --watch) + Vite dev server (HMR) in parallel
+just dev       # runs server (cargo watch) + client (trunk serve) in parallel
 ```
 
-Open http://localhost:5173 (Vite proxies API/WS to the server on :7681).
+Open http://localhost:5173 (trunk proxies API/WS to the server on :7681).
 
 ### Available just recipes
 
 ```
-just install   # install npm deps
-just dev       # run server + client with hot reload
-just server    # run server only (auto-restart on changes)
-just client    # run Vite dev server only
-just build     # production client build
-just prod      # build + run production server
+just dev            # run server + client with hot reload
+just server         # run server only (cargo watch)
+just client         # run trunk dev server only
+just build          # build everything for production
+just build-client   # build client WASM only
+just build-server   # build server only
 ```
 
 ## Tech Stack
@@ -67,10 +65,11 @@ just prod      # build + run production server
 | Component | Technology |
 |-----------|-----------|
 | Terminal emulation | [ghostty-web](https://github.com/coder/ghostty-web) (Ghostty's parser → WASM) |
-| Frontend | React 19, Vite 6 |
-| Backend | Node.js, Express, WebSocket (`ws`) |
-| PTY management | [node-pty](https://github.com/nickel-org/node-pty) |
-| Packaging | Nix flakes, `buildNpmPackage` |
+| Frontend | [Leptos](https://leptos.dev) (Rust → WASM, CSR) |
+| Backend | Rust, [axum](https://github.com/tokio-rs/axum), tokio |
+| PTY management | [portable-pty](https://docs.rs/portable-pty) |
+| Shared types | `common` crate (serde) |
+| Packaging | Nix flakes, [rust-flake](https://github.com/juspay/rust-flake) (crane) |
 | Theme | Tokyo Night |
 
 ## API
@@ -81,30 +80,29 @@ just prod      # build + run production server
 |--------|----------|-------------|
 | `GET` | `/api/sessions` | List all sessions |
 | `POST` | `/api/sessions` | Create session. Body: `{ variant?, command?, cwd?, cols?, rows? }` |
-| `DELETE` | `/api/sessions/:id` | Kill and remove session |
-| `POST` | `/api/sessions/:id/resize` | Resize PTY. Body: `{ cols, rows }` |
+| `DELETE` | `/api/sessions/{id}` | Kill and remove session |
+| `POST` | `/api/sessions/{id}/resize` | Resize PTY. Body: `{ cols, rows }` |
 
 ### WebSocket
 
-Connect to `/ws/:sessionId` for bidirectional PTY I/O.
+Connect to `/ws/{sessionId}` for bidirectional PTY I/O.
 
-- **Server → Client**: Raw binary PTY output, or JSON `{"type":"exit","exitCode":N,"signal":N}`
+- **Server → Client**: Raw binary PTY output, or JSON `{"type":"exit","exit_code":N,"signal":N}`
 - **Client → Server**: Raw text (stdin), or JSON `{"type":"resize","cols":N,"rows":N}`
 
 ## Project Structure
 
 ```
-├── flake.nix                 # Nix build: client + server + wrapper
+├── Cargo.toml                # Workspace root
+├── flake.nix                 # Nix build (flake-parts + rust-flake)
 ├── justfile                  # Dev workflow recipes
+├── common/
+│   └── src/lib.rs            # Shared types (SessionMeta, WsMessages, API types)
 ├── server/
-│   ├── package.json
-│   └── src/index.js          # Express + WebSocket + node-pty session broker
+│   └── src/main.rs           # axum + portable-pty + WebSocket session broker
 └── client/
-    ├── package.json
-    ├── vite.config.js
-    └── src/
-        ├── App.jsx           # Dashboard layout + session list
-        ├── TerminalView.jsx  # ghostty-web terminal + WebSocket bridge
-        ├── NewSessionDialog.jsx
-        └── App.css           # Tokyo Night theme
+    ├── src/main.rs           # Leptos app (sidebar, session list, dialogs)
+    ├── src/terminal.rs       # ghostty-web terminal component
+    ├── js/ghostty-bridge.js  # Thin JS bridge for ghostty-web WASM interop
+    └── style.css             # Tokyo Night theme
 ```
