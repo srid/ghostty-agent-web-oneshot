@@ -8,6 +8,10 @@ A web-based terminal dashboard for managing coding agent sessions. Spawn, attach
 <img width="1227" height="982" alt="image" src="https://github.com/user-attachments/assets/30b11937-d1b7-4291-aa51-c27f9ad408c4" />
 
 
+## How it works
+
+The server spawns real PTY processes (via `node-pty`) and holds them in memory — each session is a persistent pseudo-terminal running your shell, opencode, or any TUI program. A WebSocket bridge streams raw PTY I/O between the server and the browser. On the browser side, [ghostty-web](https://github.com/coder/ghostty-web) — Ghostty's Zig-based terminal parser compiled to WebAssembly — renders the terminal output onto a canvas with full color, cursor movement, and alternate screen buffer support. Because the PTYs live on the server, sessions survive browser disconnects: close the tab, reopen it, and you're back where you left off with scrollback replayed. This replaces the need for tmux/zellij entirely — the server *is* the multiplexer, and the browser *is* the terminal.
+
 ## Architecture
 
 ```
